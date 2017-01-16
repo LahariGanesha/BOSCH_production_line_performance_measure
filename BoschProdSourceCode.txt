@@ -1,0 +1,469 @@
+
+# Code 1 - BoschProd.scala ->  Predicts the classification result from test data and stores it in -outputPredTest51.txt. Using Decision Tree algorithm, it calculates precision and accuracy of the validation set.
+import org.apache.spark.{SparkConf, SparkContext}
+
+object BoschProd {
+  def main(args: Array[String]) = {
+
+ val conf = new SparkConf().setAppName("Bosch Prod Set").setMaster("local[*]")
+    val sc = new SparkContext(conf)
+    val sqlContext = new SQLContext(sc)
+   val df = sqlContext.read
+      .format("com.databricks.spark.csv")
+      .option("header", "true") // Use first line of all files as header
+      .option("inferSchema", "true") // Automatically infer data types
+      .load("/Users/shobhikapanda/Downloads/Machine Learning Downloads/ml dataset kaggle/train_numeric_pre.csv")
+
+    val df2 = sqlContext.read
+      .format("com.databricks.spark.csv")
+      .option("header", "true") // Use first line of all files as header
+      .option("inferSchema", "true") // Automatically infer data types
+      .load("/Users/shobhikapanda/Downloads/Machine Learning Downloads/ml dataset kaggle/test_numeric_pre.csv")
+    //val df3 = df2.na.fill(0)
+    val rows: RDD[Row] = df.rdd
+    val rows2: RDD[Row] = df2.rdd
+    val anotherSet = rows2.map{
+      line =>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+      tokens(0)
+    }
+    val originalData = rows.map{
+      line=>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+        (LabeledPoint(tokens(tokens.length-1).toDouble,Vectors.dense(tokens.drop(1).map(_.toDouble))))
+    }.cache()
+    val testinData = rows2.map{
+      line=>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+        (Vectors.dense(tokens.drop(1).map(_.toDouble)))
+    }.cache()
+
+    val splitOn = originalData.randomSplit(Array(0.7, 0.3))
+    val (trainingData, testData) = (splitOn(0), splitOn(1))
+    val noClass = 2
+    val catFeature = Map[Int, Int]()
+    val imp = "gini"
+    val mxDep = 10
+    val mxBin = 32
+
+    val model = DecisionTree.trainClassifier(trainingData, noClass, catFeature,
+      imp, mxDep, mxBin)
+    val model2 = DecisionTree.trainClassifier(originalData, noClass, catFeature,
+      imp, mxDep, mxBin)
+    // Evaluate model on test instances and compute test error
+    val labelAndPreds2 = testinData.map { point =>
+
+      val prediction = model2.predict(point)
+      (prediction)
+    }
+    var newRdd = labelAndPreds2.map{
+      x => x
+    }
+
+    newRdd.saveAsTextFile("src/main/scala/outputPredTest51")
+
+    val validatePred = testData.map { po =>
+
+      val pred = model.predict(po.features)
+      (po.label, pred)
+    }
+    println("prediction on validation set")
+    //labelAndPreds.take(10).foreach(println)
+    val accuracy =  100.0 *validatePred.filter(x => x._1 == x._2).count.toDouble / testData.count
+    println("Accuracy of Decision Tree is= " + accuracy+"%")
+    println("Learned classification forest model:\n" + model.toDebugString)
+  }
+}
+
+
+# Code 2 - BoostAlgos.scala ->  Predicts the classification result from test data and stores it in -outputPreds3.txt. Using Random Forest algorithm, it calculates precision and accuracy of the validation set.
+
+
+object BoostAlgos{
+  def main(args: Array[String]) = {
+
+    val conf = new SparkConf().setAppName("Ml Test").setMaster("local[*]")
+    val sc = new SparkContext(conf)
+    val sqlContext = new SQLContext(sc)
+    val df = sqlContext.read
+      .format("com.databricks.spark.csv")
+      .option("header", "true") // Use first line of all files as header
+      .option("inferSchema", "true") // Automatically infer data types
+      .load("/Users/shobhikapanda/Downloads/Machine Learning Downloads/ml dataset kaggle/train_numeric_pre.csv")
+
+    val df2 = sqlContext.read
+      .format("com.databricks.spark.csv")
+      .option("header", "true") // Use first line of all files as header
+      .option("inferSchema", "true") // Automatically infer data types
+      .load("/Users/shobhikapanda/Downloads/Machine Learning Downloads/ml dataset kaggle/test_numeric_pre.csv")
+   // val df3 = df.na.fill(0)
+    val rows: RDD[Row] = df.rdd
+    val rows2: RDD[Row] = df2.rdd
+    val anotherSet = rows2.map{
+      line =>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+        tokens(0)
+    }
+    val originalData = rows.map{
+      line=>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+        (LabeledPoint(tokens(tokens.length-1).toDouble,Vectors.dense(tokens.drop(1).map(_.toDouble))))
+    }.cache()
+    val testinData = rows2.map{
+      line=>
+        val lineString = line.toString
+        val subString = lineString.substring(1,lineString.length-1)
+        val tokens = subString.split(',')
+        (Vectors.dense(tokens.drop(1).map(_.toDouble)))
+    }.cache()
+
+
+    val splitBy = originalData.randomSplit(Array(0.7, 0.3))
+    val (trainingData, testData) = (splitBy(0), splitBy(1))
+
+    val numClasses = 2
+    val categoricalFeaturesInfo = Map[Int, Int]()
+    val noTree = 3 // Use more in practice.
+    val featSubStrat = "auto" // Let the algorithm choose.
+    val imp = "gini"
+    val mxDepth = 4
+    val mxBin = 32
+
+    val model = RandomForest.trainClassifier(trainingData, numClasses, categoricalFeaturesInfo,
+      noTree, featSubStrat, imp, mxDepth, mxBin)
+
+    val model2 = RandomForest.trainClassifier(originalData, numClasses, categoricalFeaturesInfo,
+      noTree, featSubStrat, imp, mxDepth, mxBin)
+
+    val pred2 = testinData.map { point =>
+      val p = model2.predict(point)
+      (p)
+    }
+    // Evaluate model on test instances and compute test error
+    val pred1 = testData.map { x =>
+      val ption = model.predict(x.features)
+      (x.label,ption)
+    }
+   // labelAndPreds2.take(10).foreach(println)
+    pred2.saveAsTextFile("src/main/scala/outputPreds4")
+
+    val ErrTest = pred1.filter(r => r._1 != r._2).count.toDouble / testData.count()
+    println("Test Error = " + ErrTest)
+    println("Learned classification forest model:\n" + model.toDebugString)
+
+
+  }
+}
+
+# Code 3 pre process  - XGB.R
+
+library(data.table)
+library(Matrix)
+library(caret)
+library(xgboost)
+#install.packages("ipred")
+library(ipred)
+#install.packages("ROCR")
+library(ROCR)
+
+dt <- fread("F:/UTD/Sem 4/Machine Learning/Project/train_numeric.csv",
+            drop = "Id",
+            nrows = 60000,
+            showProgress = F)
+
+Y  <- dt$Response
+dt[ , Response := NULL]
+
+for(col in names(dt)) set(dt, which(is.na(dt[[col]])), col, 0)
+
+X <- Matrix(as.matrix(dt), sparse = T)
+rm(dt)
+
+
+#creating folds on the data
+folds <- createFolds(as.factor(Y), k = 10)
+valid <- folds$Fold1
+model <- c(1:length(Y))[-valid]
+
+param <- list(objective = "binary:logistic",
+              eval_metric = "auc",
+              eta = 0.01,
+              base_score = 0.005,
+              col_sample = 0.5) 
+
+dmodel <- xgb.DMatrix(X[model,], label = Y[model])
+dvalid <- xgb.DMatrix(X[valid,], label = Y[valid])
+
+m1 <- xgb.train(data = dmodel, param, nrounds = 20,
+                watchlist = list(mod = dmodel, val = dvalid))
+#####################################################################
+
+pred <- predict(m1, dvalid)
+
+summary(pred)
+###############################################################################
+
+imp <- xgb.importance(model = m1, feature_names = colnames(X))
+
+head(imp, 30)
+
+impFeatures = imp[imp$Gain>0.001]$Feature
+
+######################################################################
+
+Coeffmatt <- function(actual, predicted) {
+  
+  truepositive <- as.numeric(sum(actual == 1 & predicted == 1))
+  truenegative <- as.numeric(sum(actual == 0 & predicted == 0))
+  falsepositive <- as.numeric(sum(actual == 0 & predicted == 1))
+  falsenegative <- as.numeric(sum(actual == 1 & predicted == 0))
+  
+  upperBlock <- (truepositive * truenegative) - (falsepositive * falsenegative)
+  lowerBlock <- ((truepositive + falsepositive) * (truepositive + falsenegative) * (truenegative + falsepositive) * (truenegative + falsenegative)) ^ 0.5
+  
+  upperBlock / lowerBlock
+}
+
+MatTable<- data.table(thresh = seq(0.990, 0.999, by = 0.001))
+
+MatTable$scores <- sapply(MatTable$thresh, FUN =
+                        function(x) Coeffmatt(Y[valid], (pred > quantile(pred, x)) * 1))
+
+optimalVal <- MatTable$thresh[which(MatTable$scores == max(MatTable$scores))]
+
+
+################################################################################
+#looking at the test data
+dt  <- fread("F:/UTD/Sem 4/Machine Learning/Project/train_numeric_full.csv",
+             nrows = 15000,
+             showProgress = F)
+
+Id  <- dt$Id
+dt[ , Id := NULL]
+
+Y <- dt$Response 
+
+for(col in names(dt)) set(dt, which(is.na(dt[[col]])), col, 0)
+
+X <- Matrix(as.matrix(dt), sparse = T)
+rm(dt)
+
+dtest <- xgb.DMatrix(X)
+pred  <- predict(m1, dtest)
+
+summary(pred)
+#####################################################################
+
+#######################################################################
+#printing the result
+ResponseLabels = (pred > quantile(pred, optimalVal)) *1
+sub   <- data.table(Id = Id,ResponseLabels)
+
+write.csv(sub, "sub.csv", row.names = F)
+
+accuracy = mean(ResponseLabels == Y)*100
+print(accuracy)
+print("##########################################")
+#Printing precision
+xtab <- table(ResponseLabels, Y)
+precis = xtab[2,1]/(xtab[2,1]+xtab[2,2])*100
+print("Precision is : ")
+print(precis)
+print("##########################################")
+#printing recall
+print("recall is ")
+recallcalc = xtab[1,2]/(xtab[1,2]+xtab[2,1])*100
+print(recallcalc)
+
+
+##Code 4 - ggPlot.R . This is to plot all the feautures distributed in the Stations.
+ 
+library(data.table)
+library(Matrix)
+library(caret)
+library(xgboost)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+install.packages("tidyr")
+library(reshape)
+library(tidyr)
+train_date <- fread("D:/03Sem/ML/Project/Data/train_datee.csv", nrows = 1)
+train_num <- fread("D:/03Sem/ML/Project/Data/train_numeric.csv", nrows = 1)
+train_categorical <- fread("D:/03Sem/ML/Project/Data/test_categorical.csv", nrows = 1)
+#Numerical training set features
+features_num<-data.frame(features=names(train_num),Ftype="Numeric")  
+
+#Date training set features
+features_dat<-data.frame(features=names(train_date),Ftype="Date")  
+
+#Categorical training set features
+features_cat<-data.frame(features=names(train_categorical),Ftype="Categorical")  
+features_dat
+# combine all 
+
+features_station<-rbind(features_num[2:969,],features_dat[2:1157,],features_cat[2:2141,])
+features_station
+# extract line, station, feature number from feature names
+features_station<-cbind(features_station,colsplit(features_station$features, split = "_", names = c("Line","Station","Fno"))) # reshape
+#features_station<-cbind(features_station,separate(features_station$features,col = names,into = c("Line","Station","Fno"))) # reshape
+
+
+features_station[,3:5]<-apply(features_station[,3:5], 2, function(x) as.numeric(gsub("[LSFD]", "", x)))
+
+glimpse(features_station)
+# arrange features with accending order of feature no
+y<-features_station%>%
+  arrange(desc(-Fno))
+
+glimpse(y)
+
+# we can see feature are ordered num-date-num and so on...
+
+featurePlot<-ggplot(data = features_station,aes(x=Station))+
+  geom_point(aes(y=Fno,colour=factor(Ftype),pch=factor(Ftype)),size=1.5)+
+  geom_vline(xintercept = c(-0.5,23.5,25.5,28.5,51.5), color = "red", size=.5)+
+  scale_x_continuous(name="Station No", breaks=seq(0,51,3))+
+  ylab("Features number")+
+  annotate("text", x=c(10,24.5,27,40), y=4200, label= c("Line:L1","L2","L3","L4"),color = "blue")
+
+featurePlot
+
+
+###Code 5  - flowpathStation.R  -> # script capturing flow of parts through stations
+
+
+
+library(data.table)
+
+# prepare
+catcols <- fread("D:/03Sem/ML/Project/Data/train_categorical.csv", nrows = 0L, skip = 0L)  
+catnames <- names(catcols)
+catclassvector <- c("integer", rep.int("character", ncol(catcols)-1)) 
+numcols <- fread("D:/03Sem/ML/Project/Data/train_numeric.csv", nrows = 0L, skip = 0L)  
+numnames <- names(numcols)
+numclassvector <- c("integer", rep.int("numeric", ncol(numcols)-1))
+
+# define the aggregating function
+getstations <- function(chunksize, s){
+  
+  cats <- fread("D:/03Sem/ML/Project/Data/train_categorical.csv", colClasses = catclassvector, na.strings=""
+                , stringsAsFactors=FALSE, nrows = chunksize, skip=s)  
+  setnames(cats, catnames)
+  
+  cats2 = melt(cats, 'Id', variable.name='feature',  variable.factor = FALSE, value.name='measurement')
+  cats2[, measurement := gsub("T", "", measurement)]
+  cats2[, measurement := as.numeric(measurement)] 
+  cats2[, station := substr(feature, 1L, 6L)]
+  cats2[, feature := NULL]
+  
+  nums <- fread("D:/03Sem/ML/Project/Data/train_numeric.csv", colClasses = numclassvector, na.strings=""
+                , stringsAsFactors=FALSE, nrows = chunksize, skip=s)
+  setnames(nums, numnames)
+  
+  resps <- nums[, .(Id, Response)] # saving this for later
+  nums[, Response := NULL] 
+  
+  nums2 = melt(nums, 'Id', variable.name='feature',  variable.factor = FALSE, value.name='measurement')
+  nums2[, station := substr(feature, 1L, 6L)]
+  nums2[, feature := NULL]
+  
+  cats2 <- rbind(cats2, nums2)
+  
+  partssum <- cats2[, .(meas = mean(as.numeric(measurement), na.rm = TRUE)), by= .(station, Id)]
+  return(partssum)
+}
+
+
+# loop through files and get a crude sample of aggregated data
+chunksize = 10000
+skip = chunksize*10
+s = 0
+psample <- data.table(station = character(), Id = integer(), meas = numeric())
+
+for (i in 1:11) {
+  p <- getstations(chunksize, s)
+  psample <- rbind(psample, p)
+  s = s+skip
+  cat(i)
+}
+
+rm(p)
+
+#re-reshape and clean up
+psample =  dcast(psample, Id ~ station, value.var = "meas")
+setnames(psample, c("L0_S0_", "L0_S1_", "L0_S2_", "L0_S3_", "L0_S4_", "L0_S5_"
+                    , "L0_S6_" , "L0_S7_", "L0_S8_", "L0_S9_")
+         , c("L0_S00", "L0_S01", "L0_S02", "L0_S03", "L0_S04", "L0_S05" 
+             , "L0_S06", "L0_S07", "L0_S08", "L0_S09")
+)
+
+pnames <- sort(names(psample))
+setcolorder(psample, pnames)
+
+##### produce the Visualization ###
+###################################
+
+setDF(psample)
+library(VIM)
+
+png(filename="flowpaths.png",  # use this device for scalable, high-res graphics
+    type="cairo",
+    units="in",
+    width=12,
+    height=6.5,
+    pointsize=10,
+    res=300)
+
+# show the data by volume
+miceplot <- aggr(psample[, -c(1)], col=c("dodgerblue","lightgray"),
+                 numbers=TRUE, combined=TRUE, varheight=TRUE, border=NA,
+                 sortVars=FALSE, sortCombs=FALSE, ylabs=c("Product Families"),
+                 labels=names(psample[, 1]), cex.axis=.7)
+dev.off()
+
+
+
+#### grab unique flow paths ####       
+#####################################
+
+library(tidyr)
+setDT(psample)
+
+# convert everything to 1s and 0s
+Id <- psample[, Id]
+psample[!is.na(psample)] <- 1
+psample[is.na(psample)] <- 0
+psample <- cbind(Id, psample[, 2:53, with = FALSE])
+
+# concatenate the 1s and 0s
+paths <- unite(psample, path, L0_S00:L3_S51, sep = "", remove = TRUE)
+
+# count the 1s
+stations <- (paths$path)
+g2 <- sapply(regmatches(stations, gregexpr("1", stations)), length)
+paths[, stationcount := g2]
+
+# aggregate by path
+flowpaths <- paths[, .(pct = .N/nrow(paths)), by = path]
+
+# fwrite(flowpaths, "flowpathsample.csv")
+write.csv(flowpaths, "flowpathsample.csv", quote = FALSE, row.names = FALSE)
+
+
+
+
+
+
+
+
